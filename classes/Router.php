@@ -221,7 +221,7 @@ class Router extends WireData {
 		}
     // Throw exception if roles are set but there is no match
 		if (isset($routeParams['roles']) && !$roleFound) {
-      throw new AppApiException('User does not have one of the required roles for this route.', 403);
+      throw new AppApiException('Roles list set to this route is malformed.', 403);
 		}
 
     // Check if the current user has one of the required permissions for this route:
@@ -254,7 +254,7 @@ class Router extends WireData {
 		}
     // Throw exception if permissions are set but there is no match
 		if (isset($routeParams['permissions']) && !$permissionFound) {
-      throw new AppApiException('User does not have one of the required permissions for this route.', 403);
+      throw new AppApiException('Permissions list set to this route is malformed.', 403);
 		}
 
 		// If the code runs until here, the request is authenticated
