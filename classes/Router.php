@@ -219,6 +219,43 @@ class Router extends WireData {
 				throw new AppApiException('User does not have one of the required roles for this route.', 403);
 			}
 		}
+    // Throw exception if roles are set but there is no match
+		if (isset($routeParams['roles']) && !$roleFound) {
+      throw new AppApiException('User does not have one of the required roles for this route.', 403);
+		}
+
+    // Check if the current user has one of the required permissions for this route:
+    if (isset($routeParams['permissions']) && (is_array($routeParams['permissions']) || $routeParams['permissions'] instanceof WireArray || $routeParams['permissions'] instanceof Permission)) {
+
+      if ($routeParams['permissions'] instanceof WireArray || $routeParams['permissions'] instanceof Permission) {
+        $userPermissions = $this->wire('user')->getPermissions()->explode('id');
+        if ($routeParams['permissions'] instanceof WireArray) {
+          $routeParams['permissions'] = $routeParams['permissions']->explode('id');
+        }
+        if ($routeParams['permissions'] instanceof Permission) {
+          $routeParams['permissions'] = [$routeParams['permissions']->id];
+        }
+
+        $permissionFound = !!count(array_intersect($routeParams['permissions'],$userPermissions));
+        if (!$permissionFound) {
+          throw new AppApiException('User does not have one of the required permissions for this route.', 403);
+        }
+      }
+
+      $userPermissions = [
+        ...$this->wire('user')->getPermissions()->explode('id'),
+        ...$this->wire('user')->getPermissions()->explode('name'),
+        ...$this->wire('user')->getPermissions()->explode('title'),
+      ];
+      $permissionFound = !!count(array_intersect($routeParams['permissions'],$userPermissions));
+			if (!$permissionFound) {
+				throw new AppApiException('User does not have one of the required permissions for this route.', 403);
+			}
+		}
+    // Throw exception if permissions are set but there is no match
+		if (isset($routeParams['permissions']) && !$permissionFound) {
+      throw new AppApiException('User does not have one of the required permissions for this route.', 403);
+		}
 
 		// If the code runs until here, the request is authenticated
 		// or the request does not need authentication
