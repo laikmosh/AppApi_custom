@@ -180,13 +180,23 @@ class Router extends WireData {
 		}
 
 		// Check if the route is only allowed for a specific application-id:
-		if (!empty($routeParams['application']) && $routeParams['application'] !== Auth::getInstance()->getApplication()->getID()) {
-			throw new AppApiException('Route not allowed for this application', 400);
-		}
+    if (!empty($routeParams['application']) && !!is_int($routeParams['application']) && $routeParams['application'] !== Auth::getInstance()->getApplication()->getID()) {
+      throw new AppApiException('Route not allowed for this application', 400);
+    }
 
-		if (!empty($routeParams['applications']) && is_array($routeParams['applications']) && !in_array(Auth::getInstance()->getApplication()->getID(), $routeParams['applications'])) {
-			throw new AppApiException('Route not allowed for this application', 400);
-		}
+    // Check if the route is only allowed for a specific application-name:
+    if (!empty($routeParams['application']) && !!is_string($routeParams['application']) && $routeParams['application'] !== Auth::getInstance()->getApplication()->getTitle()) {
+      throw new AppApiException('Route not allowed for this application', 400);
+    }
+
+    // Throw exception if $routeParams['application'] is set and its neither int or string
+    if (!empty($routeParams['application'])) {
+      throw new AppApiException('Route not allowed for this application', 400);
+    }
+
+    if (!empty($routeParams['applications']) && is_array($routeParams['applications']) && !array_intersect([Auth::getInstance()->getApplication()->getID(), Auth::getInstance()->getApplication()->getTitle()], $routeParams['applications'])) {
+      throw new AppApiException('Route not allowed for this application', 400);
+    }
 
 		// Check if particular route does need auth:
 		if (isset($routeParams['auth']) && $routeParams['auth'] === true && !$this->wire('user')->isLoggedIn()) {
