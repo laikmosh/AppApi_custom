@@ -180,13 +180,23 @@ class Router extends WireData {
 		}
 
 		// Check if the route is only allowed for a specific application-id:
-		if (!empty($routeParams['application']) && $routeParams['application'] !== Auth::getInstance()->getApplication()->getID()) {
-			throw new AppApiException('Route not allowed for this application', 400);
-		}
+    if (!empty($routeParams['application']) && !!is_int($routeParams['application']) && $routeParams['application'] !== Auth::getInstance()->getApplication()->getID()) {
+      throw new AppApiException('Route not allowed for this application', 400);
+    }
 
-		if (!empty($routeParams['applications']) && is_array($routeParams['applications']) && !in_array(Auth::getInstance()->getApplication()->getID(), $routeParams['applications'])) {
-			throw new AppApiException('Route not allowed for this application', 400);
-		}
+    // Check if the route is only allowed for a specific application-name:
+    if (!empty($routeParams['application']) && !!is_string($routeParams['application']) && $routeParams['application'] !== Auth::getInstance()->getApplication()->getTitle()) {
+      throw new AppApiException('Route not allowed for this application', 400);
+    }
+
+    // Throw exception if $routeParams['application'] is set and its neither int or string
+    if (!empty($routeParams['application'])) {
+      throw new AppApiException('Route not allowed for this application', 400);
+    }
+
+    if (!empty($routeParams['applications']) && is_array($routeParams['applications']) && !array_intersect([Auth::getInstance()->getApplication()->getID(), Auth::getInstance()->getApplication()->getTitle()], $routeParams['applications'])) {
+      throw new AppApiException('Route not allowed for this application', 400);
+    }
 
 		// Check if particular route does need auth:
 		if (isset($routeParams['auth']) && $routeParams['auth'] === true && !$this->wire('user')->isLoggedIn()) {
@@ -208,6 +218,43 @@ class Router extends WireData {
 			if (!$roleFound) {
 				throw new AppApiException('User does not have one of the required roles for this route.', 403);
 			}
+		}
+    // Throw exception if roles are set but there is no match
+		if (isset($routeParams['roles']) && !$roleFound) {
+      throw new AppApiException('Roles list set to this route is malformed.', 403);
+		}
+
+    // Check if the current user has one of the required permissions for this route:
+    if (isset($routeParams['permissions']) && (is_array($routeParams['permissions']) || $routeParams['permissions'] instanceof WireArray || $routeParams['permissions'] instanceof Permission)) {
+
+      if ($routeParams['permissions'] instanceof WireArray || $routeParams['permissions'] instanceof Permission) {
+        $userPermissions = $this->wire('user')->getPermissions()->explode('id');
+        if ($routeParams['permissions'] instanceof WireArray) {
+          $routeParams['permissions'] = $routeParams['permissions']->explode('id');
+        }
+        if ($routeParams['permissions'] instanceof Permission) {
+          $routeParams['permissions'] = [$routeParams['permissions']->id];
+        }
+
+        $permissionFound = !!count(array_intersect($routeParams['permissions'],$userPermissions));
+        if (!$permissionFound) {
+          throw new AppApiException('User does not have one of the required permissions for this route.', 403);
+        }
+      }
+
+      $userPermissions = [
+        ...$this->wire('user')->getPermissions()->explode('id'),
+        ...$this->wire('user')->getPermissions()->explode('name'),
+        ...$this->wire('user')->getPermissions()->explode('title'),
+      ];
+      $permissionFound = !!count(array_intersect($routeParams['permissions'],$userPermissions));
+			if (!$permissionFound) {
+				throw new AppApiException('User does not have one of the required permissions for this route.', 403);
+			}
+		}
+    // Throw exception if permissions are set but there is no match
+		if (isset($routeParams['permissions']) && !$permissionFound) {
+      throw new AppApiException('Permissions list set to this route is malformed.', 403);
 		}
 
 		// If the code runs until here, the request is authenticated
