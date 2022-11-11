@@ -193,7 +193,7 @@ class Auth extends WireData {
          }
          if ($this->application->getAuthtype() === Application::authtypeDoubleJWTsecure) {
             return [
-               'refresh_token_expiration' => $this->createRefreshTokenSecure(),
+               'refresh_token_expiration' => $this->createRefreshToken([], $secure = true),
                'username' => $this->wire('user')->name,
                // 'app' => $this->application->getAuthtype()
             ];
@@ -203,7 +203,7 @@ class Auth extends WireData {
       throw new AuthException('Login not successfull', 401);
    }
 
-   protected function ___createRefreshToken($args = []) {
+   protected function ___createRefreshToken($args = [], $secure = false) {
       if ($this->wire('user')->isGuest()) {
          throw new AuthException('user is not logged in', 401);
       }
@@ -218,23 +218,20 @@ class Auth extends WireData {
          throw new InternalServererrorException('Token could not be saved', 500);
       }
 
+      if ($secure) {
+         $this->input->cookie->set('refresh_token', 'Bearer ' . $jwt, [
+            'age' => $this->application->getExpiresIn(),
+            'httponly' => true, // make visible to PHP but not JS
+            'secure' => isset($_SERVER['HTTPS']) ? true : null,
+            'domain' => true
+         ]);
+         $jwt = $apptoken->getExpirationTime();
+         $this->input->cookie->set('refresh_token_expiration', $jwt, [
+            'age' => $this->application->getExpiresIn(),
+         ]);
+      }
+
       return $jwt;
-   }
-
-   protected function ___createRefreshTokenSecure($args = []) {
-      $jwt = $this->createRefreshToken();
-
-      $apptoken = new Apptoken($this->application->getID());
-      $expirationTime = time() + $this->application->getExpiresIn();
-
-      $this->input->cookie->set('refresh_token', 'Bearer ' . $jwt, [
-         'age' => $apptoken->getExpirationTime(),
-         'httponly' => true, // make visible to PHP but not JS
-         'secure' => isset($_SERVER['HTTPS']) ? true : null,
-         'domain' => true
-      ]);
-
-      return $expirationTime;
    }
 
 
@@ -293,7 +290,7 @@ class Auth extends WireData {
       if ($this->application->getAuthtype() === Application::authtypeDoubleJWTsecure) {
          return [
             'access_token' => $accesstoken,
-            'refresh_token_expiration' => $this->createRefreshTokenSecure(),
+            'refresh_token_expiration' => $this->createRefreshToken([], $secure = true),
          ];
       }
    }
@@ -397,11 +394,14 @@ class Auth extends WireData {
          // todo log
       }
 
-      $this->input->cookie->set('refresh_token', '', [
-         'age' => time() - 42000,
+      $this->input->cookie->set('refresh_token', '0', [
+         'age' => 0,
          'httponly' => true, // make visible to PHP but not JS
          'secure' => isset($_SERVER['HTTPS']) ? true : null,
          'domain' => true
+      ]);
+      $this->input->cookie->set('refresh_token_expiration', '0', [
+         'age' => 0,
       ]);
 
       $this->wire('session')->logout($this->wire('user'));
