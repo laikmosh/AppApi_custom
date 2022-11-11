@@ -7,356 +7,410 @@ require_once __DIR__ . '/AppApiHelper.php';
 use \Firebase\JWT\JWT;
 
 class Auth extends WireData {
-	protected $apikey = false;
-	protected $application = false;
-
-	// Only needed for logging:
-	protected $tokenId = false;
-
-	public function ___initApikey() {
-		$headers = AppApiHelper::getRequestHeaders();
-		$tokenFromGet = $_GET && isset($_GET['api_key']) ? $_GET['api_key'] : '';
-
-		if (!empty($headers['X-API-KEY']) || !empty($tokenFromGet)) {
-			$apikey = !empty($headers['X-API-KEY']) ? $headers['X-API-KEY'] : $tokenFromGet;
-			try {
-				// Get apikey-object:
-				$apikeyString = $this->sanitizer->text($apikey);
-				$db = $this->wire('database');
-				$query = $db->prepare('SELECT * FROM ' . AppApi::tableApikeys . ' WHERE `key`=:key;');
-				$query->closeCursor();
-
-				$query->execute([
-					':key' => $apikeyString
-				]);
-				$queueRaw = $query->fetch(\PDO::FETCH_ASSOC);
-				$this->apikey = new Apikey($queueRaw);
-
-				// Get application from apikey:
-				$query = $db->prepare('SELECT * FROM ' . AppApi::tableApplications . ' WHERE `id`=:id;');
-				$query->closeCursor();
-
-				$query->execute([
-					':id' => $this->apikey->getApplicationID()
-				]);
-				$queueRaw = $query->fetch(\PDO::FETCH_ASSOC);
-				$this->application = new Application($queueRaw);
-			} catch (\Throwable $e) {
-			}
-		} else {
-			try {
-				// Get default application that handles requests without an apikey:
-				$db = $this->wire('database');
-				$query = $db->prepare('SELECT * FROM ' . AppApi::tableApplications . ' WHERE `default_application`=true;');
-				$query->closeCursor();
-				$query->execute();
-				$queueRaw = $query->fetch(\PDO::FETCH_ASSOC);
-				if (!$queueRaw || !is_array($queueRaw)) {
-					throw new \Exception('No default application set.');
-				}
-				$this->application = new Application($queueRaw);
-			} catch (\Throwable $e) {
-			}
-		}
-	}
-
-	public function getApplication() {
-		return $this->application;
-	}
-
-	public function isApikeyValid() {
-		return ($this->apikey instanceof Apikey && $this->apikey->isAccessable() && $this->application instanceof Application) || ($this->apikey === false && $this->application instanceof Application);
-	}
-
-	public function getApikeyLog() {
-		if (!$this->isApikeyValid() || !($this->apikey instanceof Apikey)) {
-			return 'Apikey-ID: NONE';
-		}
-		return 'Apikey-ID: ' . $this->apikey->getID();
-	}
-
-	public function getApplicationLog() {
-		if (!$this->application) {
-			return 'Application-ID: NONE';
-		}
-		return 'Application-ID: ' . $this->application->getID();
-	}
-
-	protected function ___createSingleJWTToken($args = []) {
-		if ($this->wire('user')->isGuest()) {
-			throw new AuthException('user is not logged in', 401);
-		}
-
-		$apptoken = new Apptoken($this->application->getID());
-		$apptoken->setUser($this->wire('user'));
-		$apptoken->setExpirationTime(time() + $this->application->getExpiresIn());
-
-		$tokenArgs = [];
-		session_regenerate_id(true);
-		$sessionName = session_name();
-		$sid = $this->wire('input')->cookie($sessionName);
-		if (is_string($sid) && strlen($sid) > 0) {
-			$tokenArgs['sid'] = $sid;
-		}
-
-		$wiresChallengeWert = $this->wire('input')->cookie($sessionName . '_challenge');
-		if (is_string($wiresChallengeWert) && strlen($wiresChallengeWert) > 0) {
-			$tokenArgs['sid_challenge'] = $wiresChallengeWert;
-		}
-
-		$tokenArgs = array_merge($tokenArgs, $args);
-
-		$jwt = $apptoken->getJWT($this->application->getTokenSecret(), $tokenArgs);
-
-		$apptoken->save();
-
-		return $jwt;
-	}
-
-	public function ___doLogin($data) {
-		$access = $this->getLogintype($data);
-		$loggedIn = false;
-		$user = null;
-		$accessMethod = $access['method'];
-		$allowedLoginTypes = $this->application->getLogintype();
-		$params = (object)$access['params'];
-
-		if (
-			in_array($accessMethod, ['username-password', 'any-password']) &&
-			in_array('logintypeUsernamePassword', $allowedLoginTypes)
-		) {
-			// Get login params
-			$username = isset($params->username) ? $params->username : null;
-			$password = isset($params->password) ? $params->password : null;
-
-			if (empty($username) || empty($password)) {
-				throw new AuthException('Login not successful', 401);
-			}
-
-			$user = $this->wire('users')->get('name=' . $username);
-
-			// prevent username sniffing by just throwing a general exception:
-			if ($user->id) {
-				$loggedIn = $this->wire('session')->login($user->name, $password);
-			}
-		}
-
-		if (
-			!$loggedIn &&
-			in_array($accessMethod, ['email-password', 'any-password']) &&
-			in_array('logintypeEmailPassword', $allowedLoginTypes)
-		) {
-			// Get login params
-			$email = isset($params->email) ? $params->email : (isset($params->username) ? $params->username : null);
-			$password = isset($params->password) ? $params->password : null;
-
-			if (empty($email) || empty($password)) {
-				throw new AuthException('Login not successful', 401);
-			}
-
-			$user = $this->wire('users')->get('email=' . $email);
-
-
-			if ($user->id) {
-				$loggedIn = $this->wire('session')->login($user->name, $password);
-			}
-		}
-
-		// prevent username sniffing by just throwing a general exception:
-		if (!$user || !$user->id) {
-			throw new AuthException('Login not successful', 401);
-		}
-
-		if ($loggedIn) {
-			if ($this->application->getAuthtype() === Application::authtypeSession) {
-				return [
-					'success' => true,
-					'username' => $this->wire('user')->name
-				];
-			}
-			if ($this->application->getAuthtype() === Application::authtypeSingleJWT) {
-				return [
-					'jwt' => $this->createSingleJWTToken(),
-					'username' => $this->wire('user')->name
-				];
-			}
-			if ($this->application->getAuthtype() === Application::authtypeDoubleJWT) {
-				return [
-					'refresh_token' => $this->createRefreshToken(),
-					'username' => $this->wire('user')->name
-				];
-			}
-		}
-
-		throw new AuthException('Login not successfull', 401);
-	}
-
-	protected function ___createRefreshToken($args = []) {
-		if ($this->wire('user')->isGuest()) {
-			throw new AuthException('user is not logged in', 401);
-		}
-
-		$apptoken = new Apptoken($this->application->getID());
-		$apptoken->setUser($this->wire('user'));
-		$apptoken->setExpirationTime(time() + $this->application->getExpiresIn()); // Refreshtoken is valid for 30 days
-
-		$jwt = $apptoken->getJWT($this->application->getTokenSecret(), $args);
-
-		if (!$apptoken->save()) {
-			throw new InternalServererrorException('Token could not be saved', 500);
-		}
-
-		return $jwt;
-	}
-
-	public function ___getAccessToken() {
-		if ($this->application->getAuthtype() !== Application::authtypeDoubleJWT) {
-			throw new AuthException('Your api-key does not support double-jwt authentication.', 400);
-		}
-
-		$tokenString = $this->getBearerToken();
-		if ($tokenString === null || !is_string($tokenString) || empty($tokenString)) {
-			throw new AuthException('No valid refreshtoken found.', 400);
-		}
-
-		// throws exception if token is invalid:
-		$token = JWT::decode($tokenString, $this->application->getTokenSecret(), ['HS256']);
-		if (!is_object($token)) {
-			throw new AuthException('Invalid Token', 400);
-		}
-
-		$user = $this->wire('users')->get('id=' . $this->wire('sanitizer')->int($token->sub));
-		if (!($user instanceof User) || !$user->id) {
-			throw new AuthException('Invalid User', 400);
-		}
-
-		$refreshtokenFromDB = $this->application->getApptoken($token->jti);
-		if (!$refreshtokenFromDB instanceof Apptoken || !$refreshtokenFromDB->isValid()) {
-			throw new AuthException('Invalid Token', 400);
-		}
-
-		if ($user->isGuest() || $refreshtokenFromDB->getUser()->id !== $user->id) {
-			throw new AuthException('Invalid User', 400);
-		}
-
-		if (!$refreshtokenFromDB->isAccessable()) {
-			throw new RefreshtokenExpiredException();
-		}
-
-		if (!$refreshtokenFromDB->matchesWithJWT($token)) {
-			throw new RefreshtokenExpiredException();
-		}
-
-		$accesstoken = $this->createAccessTokenJWT($user, [
-			'rtkn' => $refreshtokenFromDB->getTokenID()
-		]);
-
-		$refreshtokenFromDB->setExpirationTime(time() + $this->application->getExpiresIn()); // Refreshtoken is valid for 30 days
-		$refreshtokenFromDB->setLastUsed(time());
-		if (!$refreshtokenFromDB->save()) {
-			throw new InternalServererrorException('Token could not be saved', 500);
-		}
-
-		return [
-			'access_token' => $accesstoken,
-			'refresh_token' => $refreshtokenFromDB->getJWT($this->application->getTokenSecret())
-		];
-	}
-
-	protected function ___createAccessTokenJWT(User $user, $args = []) {
-		if ($user->isGuest()) {
-			throw new AuthException('user is not logged in', 401);
-		}
-
-		$apptoken = new Apptoken($this->application->getID());
-		$apptoken->setUser($user);
-		$apptoken->setExpirationTime(time() + $this->wire('config')->sessionExpireSeconds);
-
-		$tokenArgs = [];
-		session_regenerate_id(true);
-		$sessionName = session_name();
-		$wiresWert = $this->wire('input')->cookie($sessionName);
-		if (is_string($wiresWert) && strlen($wiresWert) > 0) {
-			$tokenArgs['sid'] = $wiresWert;
-		}
-
-		$wiresChallengeWert = $this->wire('input')->cookie($sessionName . '_challenge');
-		if (is_string($wiresChallengeWert) && strlen($wiresChallengeWert) > 0) {
-			$tokenArgs['sid_challenge'] = $wiresChallengeWert;
-		}
-
-		$tokenArgs = array_merge($tokenArgs, $args);
-
-		$jwt = $apptoken->getJWT($this->application->getAccesstokenSecret(), $tokenArgs);
-
-		return $jwt;
-	}
-
-	public function ___doLogout() {
-		// Remove Refresh-Token if Double-JWT:
-		try {
-			if ($this->application->getAuthtype() === Application::authtypeDoubleJWT) {
-				$tokenString = $this->getBearerToken();
-				if ($tokenString === null || !is_string($tokenString) || empty($tokenString)) {
-					return false;
-				}
-
-				// throws exception if token is invalid:
-				try {
-					$secret = $this->application->getAccesstokenSecret();
-
-					$token = JWT::decode($tokenString, $secret, ['HS256']);
-				} catch (\Firebase\JWT\ExpiredException $e) {
-					throw new AccesstokenExpiredException();
-				} catch (\Firebase\JWT\BeforeValidException $e) {
-					throw new AccesstokenNotBeforeException();
-				} catch (\Throwable $e) {
-					throw new AccesstokenInvalidException();
-				}
-
-				if (!is_object($token)) {
-					throw new AccesstokenInvalidException();
-				}
-
-				$userid = $this->wire('sanitizer')->int($token->sub);
-				if (empty($userid) || $userid < 1) {
-					throw new AccesstokenInvalidException();
-				}
-
-				$user = $this->wire('users')->get('id=' . $userid);
-				if (!($user instanceof User) || !$user->id) {
-					throw new AccesstokenInvalidException();
-				}
-
-				// Get Refreshtoken that was used to generate this accesstoken:
-				$refreshtokenFromDB = $this->application->getApptoken($token->rtkn);
-				if (!$refreshtokenFromDB instanceof Apptoken || !$refreshtokenFromDB->isValid()) {
-					throw new AccesstokenInvalidException();
-				}
-
-				if ($user->isGuest() || $refreshtokenFromDB->getUser()->id !== $user->id) {
-					throw new AccesstokenInvalidException();
-				}
-
-				if (!$refreshtokenFromDB->matchesWithJWT($token)) {
-					throw new AccesstokenInvalidException();
-				}
-
-				if (!$refreshtokenFromDB->delete()) {
-					throw new InternalServererrorException('Token could not be removed', 500);
-				}
-			}
-		} catch (\Throwable $e) {
-			// todo log
-		}
-
-		$this->wire('session')->logout($this->wire('user'));
-		return [
-			'success' => true
-		];
-	}
-
-	/*------------------------------------*\
+   protected $apikey = false;
+   protected $application = false;
+
+   // Only needed for logging:
+   protected $tokenId = false;
+
+   public function ___initApikey() {
+      $headers = AppApiHelper::getRequestHeaders();
+      $tokenFromGet = $_GET && isset($_GET['api_key']) ? $_GET['api_key'] : '';
+
+      if (!empty($headers['X-API-KEY']) || !empty($tokenFromGet)) {
+         $apikey = !empty($headers['X-API-KEY']) ? $headers['X-API-KEY'] : $tokenFromGet;
+         try {
+            // Get apikey-object:
+            $apikeyString = $this->sanitizer->text($apikey);
+            $db = $this->wire('database');
+            $query = $db->prepare('SELECT * FROM ' . AppApi::tableApikeys . ' WHERE `key`=:key;');
+            $query->closeCursor();
+
+            $query->execute([
+               ':key' => $apikeyString
+            ]);
+            $queueRaw = $query->fetch(\PDO::FETCH_ASSOC);
+            $this->apikey = new Apikey($queueRaw);
+
+            // Get application from apikey:
+            $query = $db->prepare('SELECT * FROM ' . AppApi::tableApplications . ' WHERE `id`=:id;');
+            $query->closeCursor();
+
+            $query->execute([
+               ':id' => $this->apikey->getApplicationID()
+            ]);
+            $queueRaw = $query->fetch(\PDO::FETCH_ASSOC);
+            $this->application = new Application($queueRaw);
+         } catch (\Throwable $e) {
+         }
+      } else {
+         try {
+            // Get default application that handles requests without an apikey:
+            $db = $this->wire('database');
+            $query = $db->prepare('SELECT * FROM ' . AppApi::tableApplications . ' WHERE `default_application`=true;');
+            $query->closeCursor();
+            $query->execute();
+            $queueRaw = $query->fetch(\PDO::FETCH_ASSOC);
+            if (!$queueRaw || !is_array($queueRaw)) {
+               throw new \Exception('No default application set.');
+            }
+            $this->application = new Application($queueRaw);
+         } catch (\Throwable $e) {
+         }
+      }
+   }
+
+   public function getApplication() {
+      return $this->application;
+   }
+
+   public function isApikeyValid() {
+      return ($this->apikey instanceof Apikey && $this->apikey->isAccessable() && $this->application instanceof Application) || ($this->apikey === false && $this->application instanceof Application);
+   }
+
+   public function getApikeyLog() {
+      if (!$this->isApikeyValid() || !($this->apikey instanceof Apikey)) {
+         return 'Apikey-ID: NONE';
+      }
+      return 'Apikey-ID: ' . $this->apikey->getID();
+   }
+
+   public function getApplicationLog() {
+      if (!$this->application) {
+         return 'Application-ID: NONE';
+      }
+      return 'Application-ID: ' . $this->application->getID();
+   }
+
+   protected function ___createSingleJWTToken($args = []) {
+      if ($this->wire('user')->isGuest()) {
+         throw new AuthException('user is not logged in', 401);
+      }
+
+      $apptoken = new Apptoken($this->application->getID());
+      $apptoken->setUser($this->wire('user'));
+      $apptoken->setExpirationTime(time() + $this->application->getExpiresIn());
+
+      $tokenArgs = [];
+      session_regenerate_id(true);
+      $sessionName = session_name();
+      $sid = $this->wire('input')->cookie($sessionName);
+      if (is_string($sid) && strlen($sid) > 0) {
+         $tokenArgs['sid'] = $sid;
+      }
+
+      $wiresChallengeWert = $this->wire('input')->cookie($sessionName . '_challenge');
+      if (is_string($wiresChallengeWert) && strlen($wiresChallengeWert) > 0) {
+         $tokenArgs['sid_challenge'] = $wiresChallengeWert;
+      }
+
+      $tokenArgs = array_merge($tokenArgs, $args);
+
+      $jwt = $apptoken->getJWT($this->application->getTokenSecret(), $tokenArgs);
+
+      $apptoken->save();
+
+      return $jwt;
+   }
+
+   public function ___doLogin($data) {
+      $access = $this->getLogintype($data);
+      $loggedIn = false;
+      $user = null;
+      $accessMethod = $access['method'];
+      $allowedLoginTypes = $this->application->getLogintype();
+      $params = (object)$access['params'];
+
+      if (
+         !$loggedIn &&
+         in_array($accessMethod, ['email-password', 'any-password']) &&
+         in_array('logintypeEmailPassword', $allowedLoginTypes) &&
+         isset($params->email)
+      ) {
+         // Get login params
+         $email = isset($params->email) ? $params->email : (isset($params->username) ? $params->username : null);
+         $password = isset($params->password) ? $params->password : null;
+
+         if (empty($email) || empty($password)) {
+            throw new AuthException('Login not successful', 401);
+         }
+
+         $user = $this->wire('users')->get('email=' . $email);
+
+
+         if ($user->id) {
+            $loggedIn = $this->wire('session')->login($user->name, $password);
+         }
+      }
+      
+      if (
+         in_array($accessMethod, ['username-password', 'any-password']) &&
+         in_array('logintypeUsernamePassword', $allowedLoginTypes) &&
+         isset($params->username)
+      ) {
+         // Get login params
+         $username = isset($params->username) ? $params->username : null;
+         $password = isset($params->password) ? $params->password : null;
+
+         if (empty($username) || empty($password)) {
+            throw new AuthException('Login not successful', 401);
+         }
+
+         $user = $this->wire('users')->get('name=' . $username);
+
+         // prevent username sniffing by just throwing a general exception:
+         if ($user->id) {
+            $loggedIn = $this->wire('session')->login($user->name, $password);
+         }
+      }
+
+      // prevent username sniffing by just throwing a general exception:
+      if (!$user || !$user->id) {
+         throw new AuthException('Login not successful', 401);
+      }
+
+      if ($loggedIn) {
+         if ($this->application->getAuthtype() === Application::authtypeSession) {
+            return [
+               'success' => true,
+               'username' => $this->wire('user')->name,
+               // 'app' => $this->application->getAuthtype()
+            ];
+         }
+         if ($this->application->getAuthtype() === Application::authtypeSingleJWT) {
+            return [
+               'jwt' => $this->createSingleJWTToken(),
+               'username' => $this->wire('user')->name,
+               // 'app' => $this->application->getAuthtype()
+            ];
+         }
+         if ($this->application->getAuthtype() === Application::authtypeDoubleJWT) {
+            return [
+               'refresh_token' => $this->createRefreshToken(),
+               'username' => $this->wire('user')->name,
+               // 'app' => $this->application->getAuthtype()
+            ];
+         }
+         if ($this->application->getAuthtype() === Application::authtypeDoubleJWTsecure) {
+            return [
+               'refresh_token_expiration' => $this->createRefreshTokenSecure(),
+               'username' => $this->wire('user')->name,
+               // 'app' => $this->application->getAuthtype()
+            ];
+         }
+      }
+
+      throw new AuthException('Login not successfull', 401);
+   }
+
+   protected function ___createRefreshToken($args = []) {
+      if ($this->wire('user')->isGuest()) {
+         throw new AuthException('user is not logged in', 401);
+      }
+
+      $apptoken = new Apptoken($this->application->getID());
+      $apptoken->setUser($this->wire('user'));
+      $apptoken->setExpirationTime(time() + $this->application->getExpiresIn()); // Refreshtoken is valid for 30 days
+
+      $jwt = $apptoken->getJWT($this->application->getTokenSecret(), $args);
+
+      if (!$apptoken->save()) {
+         throw new InternalServererrorException('Token could not be saved', 500);
+      }
+
+      return $jwt;
+   }
+
+   protected function ___createRefreshTokenSecure($args = []) {
+      $jwt = $this->createRefreshToken();
+
+      $apptoken = new Apptoken($this->application->getID());
+      $expirationTime = time() + $this->application->getExpiresIn();
+
+      $this->input->cookie->set('refresh_token', 'Bearer ' . $jwt, [
+         'age' => $apptoken->getExpirationTime(),
+         'httponly' => true, // make visible to PHP but not JS
+         'secure' => isset($_SERVER['HTTPS']) ? true : null,
+         'domain' => true
+      ]);
+
+      return $expirationTime;
+   }
+
+
+   public function ___getAccessToken() {
+
+      $tokenString = null;
+      if ($this->application->getAuthtype() === Application::authtypeDoubleJWT) {
+         $tokenString = $this->getBearerToken();
+      } elseif ($this->application->getAuthtype() === Application::authtypeDoubleJWTsecure) {
+         $tokenString = $this->getBearerTokenSecure();
+      }
+      if ($tokenString === null or !is_string($tokenString) or empty($tokenString)) {
+         throw new AuthException('Your api-key does not support double-jwt authentication.', 400);
+      }
+
+      // throws exception if token is invalid:
+      $token = JWT::decode($tokenString, $this->application->getTokenSecret(), ['HS256']);
+      if (!is_object($token)) {
+         throw new AuthException('Invalid Token', 400);
+      }
+
+      $user = $this->wire('users')->get('id=' . $this->wire('sanitizer')->int($token->sub));
+      if (!($user instanceof User) || !$user->id) {
+         throw new AuthException('Invalid User', 400);
+      }
+
+      $refreshtokenFromDB = $this->application->getApptoken($token->jti);
+      if (!$refreshtokenFromDB instanceof Apptoken || !$refreshtokenFromDB->isValid()) {
+         throw new AuthException('Invalid Token', 400);
+      }
+
+      if ($user->isGuest() || $refreshtokenFromDB->getUser()->id !== $user->id) {
+         throw new AuthException('Invalid User', 400);
+      }
+
+      if (!$refreshtokenFromDB->isAccessable()) {
+         throw new RefreshtokenExpiredException();
+      }
+
+      if (!$refreshtokenFromDB->matchesWithJWT($token)) {
+         throw new RefreshtokenExpiredException();
+      }
+
+
+      $accesstoken = $this->createAccessTokenJWT($user, [
+         'rtkn' => $refreshtokenFromDB->getTokenID()
+      ]);
+
+
+      if ($this->application->getAuthtype() === Application::authtypeDoubleJWT) {
+         return [
+            'access_token' => $accesstoken,
+            'refresh_token' => $this->createRefreshToken(),
+         ];
+      }
+      if ($this->application->getAuthtype() === Application::authtypeDoubleJWTsecure) {
+         return [
+            'access_token' => $accesstoken,
+            'refresh_token_expiration' => $this->createRefreshTokenSecure(),
+         ];
+      }
+   }
+
+   protected function ___createAccessTokenJWT(User $user, $args = []) {
+      if ($user->isGuest()) {
+         throw new AuthException('user is not logged in', 401);
+      }
+
+      $apptoken = new Apptoken($this->application->getID());
+      $apptoken->setUser($user);
+      $apptoken->setExpirationTime(time() + $this->wire('config')->sessionExpireSeconds);
+
+      $tokenArgs = [];
+      session_regenerate_id(true);
+      $sessionName = session_name();
+      $wiresWert = $this->wire('input')->cookie($sessionName);
+      if (is_string($wiresWert) && strlen($wiresWert) > 0) {
+         $tokenArgs['sid'] = $wiresWert;
+      }
+
+      $wiresChallengeWert = $this->wire('input')->cookie($sessionName . '_challenge');
+      if (is_string($wiresChallengeWert) && strlen($wiresChallengeWert) > 0) {
+         $tokenArgs['sid_challenge'] = $wiresChallengeWert;
+      }
+
+      $tokenArgs = array_merge($tokenArgs, $args);
+
+      $jwt = $apptoken->getJWT($this->application->getAccesstokenSecret(), $tokenArgs);
+
+      return $jwt;
+   }
+
+   public function ___doLogout() {
+      // Remove Refresh-Token if Double-JWT:
+      try {
+         if (
+            $this->application->getAuthtype() === Application::authtypeDoubleJWT
+            or
+            $this->application->getAuthtype() === Application::authtypeDoubleJWTsecure
+         ) {
+
+            $tokenString = null;
+            $auth = $this->application->getAuthtype();
+            if ($auth === Application::authtypeDoubleJWT) {
+               $tokenString = $this->getBearerToken();
+            } elseif ($auth === Application::authtypeDoubleJWTsecure) {
+               $tokenString = $this->getBearerToken();
+            }
+
+            if ($tokenString === null || !is_string($tokenString) || empty($tokenString)) {
+               return false;
+            }
+
+            // throws exception if token is invalid:
+            try {
+               $secret = $this->application->getAccesstokenSecret();
+
+               $token = JWT::decode($tokenString, $secret, ['HS256']);
+            } catch (\Firebase\JWT\ExpiredException $e) {
+               throw new AccesstokenExpiredException();
+            } catch (\Firebase\JWT\BeforeValidException $e) {
+               throw new AccesstokenNotBeforeException();
+            } catch (\Throwable $e) {
+               throw new AccesstokenInvalidException();
+            }
+
+            if (!is_object($token)) {
+               throw new AccesstokenInvalidException();
+            }
+
+            $userid = $this->wire('sanitizer')->int($token->sub);
+            if (empty($userid) || $userid < 1) {
+               throw new AccesstokenInvalidException();
+            }
+
+            $user = $this->wire('users')->get('id=' . $userid);
+            if (!($user instanceof User) || !$user->id) {
+               throw new AccesstokenInvalidException();
+            }
+
+            // Get Refreshtoken that was used to generate this accesstoken:
+            $refreshtokenFromDB = $this->application->getApptoken($token->rtkn);
+            if (!$refreshtokenFromDB instanceof Apptoken || !$refreshtokenFromDB->isValid()) {
+               throw new AccesstokenInvalidException();
+            }
+
+            if ($user->isGuest() || $refreshtokenFromDB->getUser()->id !== $user->id) {
+               throw new AccesstokenInvalidException();
+            }
+
+            if (!$refreshtokenFromDB->matchesWithJWT($token)) {
+               throw new AccesstokenInvalidException();
+            }
+
+            if (!$refreshtokenFromDB->delete()) {
+               throw new InternalServererrorException('Token could not be removed', 500);
+            }
+         }
+      } catch (\Throwable $e) {
+         // todo log
+      }
+
+      $this->input->cookie->set('refresh_token', '', [
+         'age' => time() - 42000,
+         'httponly' => true, // make visible to PHP but not JS
+         'secure' => isset($_SERVER['HTTPS']) ? true : null,
+         'domain' => true
+      ]);
+
+      $this->wire('session')->logout($this->wire('user'));
+      return [
+         'success' => true
+      ];
+   }
+
+   /*------------------------------------*\
 	Login types
 	\*------------------------------------*/
    public function getLogintype($data) {
@@ -424,25 +478,24 @@ class Auth extends WireData {
          }
       }
 
-		if (
-			isset($headersParams->password) &&
-			!empty('' . $headersParams->password) &&
-			isset($headersParams->username) &&
-			(
-				!empty($email = $this->wire('sanitizer')->email($headersParams->username))
-				or
-				!empty($username = $this->wire('sanitizer')->pageName($headersParams->username))
-			)
-		) {
-			return [
-				'method' => 'any-password',
-				'params' => [
-					'username' => !$email && !empty($username) ? $username : null,
-					'email' => !empty($email) ? $email : null,
-					'password' => $headersParams->password
-				],
-			];
-		}
+      if (
+         isset($headersParams->password) &&
+         !empty('' . $headersParams->password) &&
+         isset($headersParams->username) &&
+         (!empty($email = $this->wire('sanitizer')->email($headersParams->username))
+            or
+            !empty($username = $this->wire('sanitizer')->pageName($headersParams->username))
+         )
+      ) {
+         return [
+            'method' => 'any-password',
+            'params' => [
+               'username' => !$email && !empty($username) ? $username : null,
+               'email' => !empty($email) ? $email : null,
+               'password' => $headersParams->password
+            ],
+         ];
+      }
 
       if (
          isset($headersParams->username) &&
@@ -480,12 +533,6 @@ class Auth extends WireData {
       try {
 
          $tokenString = $this->getBearerToken();
-         // if ($this->application->getAuthtype() === Application::authtypeDoubleJWT) {
-         //   $tokenString = $this->getBearerToken();
-         // } elseif ($this->application->getAuthtype() === Application::authtypeDoubleJWTsecure) {
-         //   // Access token is retreived normally in a secure JWT mode
-         //   $tokenString = $this->getBearerToken();
-         // }
 
          if ($tokenString === null || !is_string($tokenString) || empty($tokenString)) {
             $this->clearSession();
@@ -673,14 +720,5 @@ class Auth extends WireData {
       ];
    }
 }
-
-
-
-
-
-
-
-
-
 
 ?>

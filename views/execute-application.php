@@ -3,69 +3,69 @@
 namespace ProcessWire;
 
 if (!wire('user')->hasPermission(AppApi::manageApplicationsPermission)) {
-  echo '<h2>' . $this->_('Access denied') . '</h2>';
-  echo '<p>' . $this->_('You don\'t have the needed permissions to access this function. Please contact a Superuser.') . '</p>';
-  return;
+   echo '<h2>' . $this->_('Access denied') . '</h2>';
+   echo '<p>' . $this->_('You don\'t have the needed permissions to access this function. Please contact a Superuser.') . '</p>';
+   return;
 }
 
 if (isset($locked) && $locked === true) {
-  echo '<h2>' . $this->_('Access denied') . '</h2>';
-  if (!empty($message)) {
-    echo $message;
-  }
-  return;
+   echo '<h2>' . $this->_('Access denied') . '</h2>';
+   if (!empty($message)) {
+      echo $message;
+   }
+   return;
 }
 
 if (!isset($application) || !$application instanceof Application) {
-  $application = new Application();
-  $application->regenerateTokenSecret();
-  $application->regenerateAccesstokenSecret();
+   $application = new Application();
+   $application->regenerateTokenSecret();
+   $application->regenerateAccesstokenSecret();
 }
 
 if (!$application->isNew()) {
-  $apikeysTable = $modules->get('MarkupAdminDataTable');
-  $apikeysTable->setEncodeEntities(false);
+   $apikeysTable = $modules->get('MarkupAdminDataTable');
+   $apikeysTable->setEncodeEntities(false);
 
-  $apikeysTable->headerRow([
-    $this->_('Key'),
-    $this->_('Version'),
-    $this->_('Created'),
-    $this->_('Created by'),
-    $this->_('Accessable until'),
-    $this->_('Actions')
-  ]);
+   $apikeysTable->headerRow([
+      $this->_('Key'),
+      $this->_('Version'),
+      $this->_('Created'),
+      $this->_('Created by'),
+      $this->_('Accessable until'),
+      $this->_('Actions')
+   ]);
 
-  $apikeys = $application->getApikeys();
+   $apikeys = $application->getApikeys();
 
-  if ($apikeys instanceof WireArray && $apikeys->count > 0) {
-    foreach ($apikeys as $apikey) {
-      $row = [
-        '<a href="' . $this->wire('page')->url . 'apikey/edit/' . $apikey->getID() . '">' . $apikey->getKey() . '</a>',
-        $apikey->getVersion(),
-        wire('datetime')->date('', $apikey->getCreated()),
-        $apikey->getCreatedUserLink(),
-        wire('datetime')->date('', $apikey->getAccessableUntil()),
-        '<a href="' . $this->wire('page')->url . 'apikey/delete/' . $apikey->getID() . '"><i class="fa fa-trash"></i></a>'
-      ];
+   if ($apikeys instanceof WireArray && $apikeys->count > 0) {
+      foreach ($apikeys as $apikey) {
+         $row = [
+            '<a href="' . $this->wire('page')->url . 'apikey/edit/' . $apikey->getID() . '">' . $apikey->getKey() . '</a>',
+            $apikey->getVersion(),
+            wire('datetime')->date('', $apikey->getCreated()),
+            $apikey->getCreatedUserLink(),
+            wire('datetime')->date('', $apikey->getAccessableUntil()),
+            '<a href="' . $this->wire('page')->url . 'apikey/delete/' . $apikey->getID() . '"><i class="fa fa-trash"></i></a>'
+         ];
 
-      $apikeysTable->row($row);
-    }
+         $apikeysTable->row($row);
+      }
 
-    $apikeysTableOutput = $apikeysTable->render();
-  }
+      $apikeysTableOutput = $apikeysTable->render();
+   }
 
-  if (empty($apikeysTableOutput)) {
-    $apikeysTableOutput = '<p><i>' . $this->_('There are no apikeys set for this application.') . '</i></p>';
-  }
+   if (empty($apikeysTableOutput)) {
+      $apikeysTableOutput = '<p><i>' . $this->_('There are no apikeys set for this application.') . '</i></p>';
+   }
 
-  $button = $this->modules->get('InputfieldButton');
-  $button->value = $this->_('Add new Apikey');
-  $button->icon = 'plus';
-  $button->setSmall(true);
-  $button->attr('href', $this->wire('page')->url . 'apikey/new/' . $application->getID());
-  $apikeysTableOutput .= $button->render();
+   $button = $this->modules->get('InputfieldButton');
+   $button->value = $this->_('Add new Apikey');
+   $button->icon = 'plus';
+   $button->setSmall(true);
+   $button->attr('href', $this->wire('page')->url . 'apikey/new/' . $application->getID());
+   $apikeysTableOutput .= $button->render();
 } else {
-  $apikeysTableOutput = '<p><i>' . $this->_('You can add apikeys after saving the application the first time.') . '</i></p>';
+   $apikeysTableOutput = '<p><i>' . $this->_('You can add apikeys after saving the application the first time.') . '</i></p>';
 }
 
 // Build form:
@@ -101,10 +101,10 @@ $field->attr('id+name', 'form_authtype');
 $field->columnWidth = 20;
 $field->required = 1;
 $field->addOptions([
-  Application::authtypeSession => Application::getAuthtypeLabel(Application::authtypeSession),
-  Application::authtypeSingleJWT => Application::getAuthtypeLabel(Application::authtypeSingleJWT),
-  Application::authtypeDoubleJWT => Application::getAuthtypeLabel(Application::authtypeDoubleJWT),
-  Application::authtypeDoubleJWTsecure => Application::getAuthtypeLabel(Application::authtypeDoubleJWTsecure)
+   Application::authtypeSession => Application::getAuthtypeLabel(Application::authtypeSession),
+   Application::authtypeSingleJWT => Application::getAuthtypeLabel(Application::authtypeSingleJWT),
+   Application::authtypeDoubleJWT => Application::getAuthtypeLabel(Application::authtypeDoubleJWT),
+   Application::authtypeDoubleJWTsecure => Application::getAuthtypeLabel(Application::authtypeDoubleJWTsecure)
 ]);
 $field->value = $application->getAuthtype();
 $field->collapsed = Inputfield::collapsedNever;
@@ -134,7 +134,7 @@ $field->columnWidth = 20;
 $field->required = 1;
 $loginTypeOptions = [];
 foreach (Application::logintypeOptions as $key => $loginTypeOption) {
-  $field->addOptions([$loginTypeOption => Application::getLogintypeLabel($loginTypeOption)]);
+   $field->addOptions([$loginTypeOption => Application::getLogintypeLabel($loginTypeOption)]);
 }
 $field->value = $application->getLogintype();
 $field->collapsed = Inputfield::collapsedNever;
@@ -224,64 +224,64 @@ $submitButton->header = false;
 $form->add($submitButton);
 
 if (!$application->isNew()) {
-  $button = $this->modules->get('InputfieldButton');
-  $button->href = $this->page->url . 'application/delete/' . $application->getID();
-  $button->value = 'delete';
-  $button->icon = 'trash-o';
-  $button->name = 'action-delete';
-  $button->secondary = true;
-  $form->add($button);
+   $button = $this->modules->get('InputfieldButton');
+   $button->href = $this->page->url . 'application/delete/' . $application->getID();
+   $button->value = 'delete';
+   $button->icon = 'trash-o';
+   $button->name = 'action-delete';
+   $button->secondary = true;
+   $form->add($button);
 }
 
 if (wire('input')->post('action-save')) {
-  // form submitted
-  $form->processInput(wire('input')->post);
-  $errors = $form->getErrors();
-  $messages = [];
+   // form submitted
+   $form->processInput(wire('input')->post);
+   $errors = $form->getErrors();
+   $messages = [];
 
-  if (count($errors)) {
-    // The submitted form-data has errors
-    foreach ($errors as $error) {
-      $this->session->error($error);
-    }
-  } else {
-    // The submitted form has no errors. We can save the application.
-
-    try {
-      $doRedirect = $application->isNew();
-
-      $application->setModifiedUser(wire('user'));
-      $application->setTitle($form->get('form_title')->attr('value'));
-      $application->setDescription($form->get('form_description')->attr('value'));
-      $application->setDefaultApplication($form->get('form_default_application')->attr('value'));
-      $application->setTokenSecret($form->get('form_token_secret')->attr('value'));
-      $application->setAccesstokenSecret($form->get('form_accesstoken_secret')->attr('value'));
-      $application->setExpiresIn($form->get('form_expires_in')->attr('value'));
-      $application->setAuthtype($form->get('form_authtype')->attr('value'));
-      $application->setLogintype($form->get('form_logintype')->attr('value'));
-
-      if (!$application->save()) {
-        throw new \Exception('The application could not be saved.');
+   if (count($errors)) {
+      // The submitted form-data has errors
+      foreach ($errors as $error) {
+         $this->session->error($error);
       }
+   } else {
+      // The submitted form has no errors. We can save the application.
 
-      $this->notices->add(new NoticeMessage($application->isNew() ? $this->_('The application was successfully created.') : $this->_('The changes to your application were saved.')));
+      try {
+         $doRedirect = $application->isNew();
 
-      if ($doRedirect) {
-        $this->session->redirect($this->wire('page')->url . 'application/edit/' . $application->getID());
+         $application->setModifiedUser(wire('user'));
+         $application->setTitle($form->get('form_title')->attr('value'));
+         $application->setDescription($form->get('form_description')->attr('value'));
+         $application->setDefaultApplication($form->get('form_default_application')->attr('value'));
+         $application->setTokenSecret($form->get('form_token_secret')->attr('value'));
+         $application->setAccesstokenSecret($form->get('form_accesstoken_secret')->attr('value'));
+         $application->setExpiresIn($form->get('form_expires_in')->attr('value'));
+         $application->setAuthtype($form->get('form_authtype')->attr('value'));
+         $application->setLogintype($form->get('form_logintype')->attr('value'));
+
+         if (!$application->save()) {
+            throw new \Exception('The application could not be saved.');
+         }
+
+         $this->notices->add(new NoticeMessage($application->isNew() ? $this->_('The application was successfully created.') : $this->_('The changes to your application were saved.')));
+
+         if ($doRedirect) {
+            $this->session->redirect($this->wire('page')->url . 'application/edit/' . $application->getID());
+         }
+      } catch (\Exception $e) {
+         $this->session->error($e->getMessage());
       }
-    } catch (\Exception $e) {
-      $this->session->error($e->getMessage());
-    }
-  }
+   }
 }
 
 if (!$application->isNew()) {
-  $field = $this->modules->get('InputfieldMarkup');
-  $field->label = $this->_('ID');
-  $field->columnWidth = '20%';
-  $field->value = $application->getID();
-  $field->collapsed = Inputfield::collapsedNever;
-  $form->prepend($field);
+   $field = $this->modules->get('InputfieldMarkup');
+   $field->label = $this->_('ID');
+   $field->columnWidth = '20%';
+   $field->value = $application->getID();
+   $field->collapsed = Inputfield::collapsedNever;
+   $form->prepend($field);
 }
 
 // Created- and Modified-Output is added after submission-handling, because only then the modified-date will have the correct time:
@@ -300,78 +300,76 @@ $field->collapsed = Inputfield::collapsedNever;
 $form->prepend($field);
 
 if (!$application->isNew() && $application->getAuthtype() === Application::authtypeDoubleJWT) {
-  $apptokensTable = $modules->get('MarkupAdminDataTable');
-  $apptokensTable->setEncodeEntities(false);
+   $apptokensTable = $modules->get('MarkupAdminDataTable');
+   $apptokensTable->setEncodeEntities(false);
 
-  $apptokensTable->headerRow([
-    $this->_('User'),
-    $this->_('id'),
-    $this->_('last used'),
-    $this->_('Actions')
-  ]);
+   $apptokensTable->headerRow([
+      $this->_('User'),
+      $this->_('id'),
+      $this->_('last used'),
+      $this->_('Actions')
+   ]);
 
-  $apptokens = $application->getApptokens();
+   $apptokens = $application->getApptokens();
 
-  if ($apptokens instanceof WireArray && $apptokens->count > 0) {
-    foreach ($apptokens as $apptoken) {
-      $row = [
-        $apptoken->getUserLink(),
-        '<a href="' . $this->wire('page')->url . 'apptoken/edit/' . $apptoken->getID() . '">' . $apptoken->getTokenId() . '</a>',
-        $apptoken->getLastUsed() !== null ? wire('datetime')->date('', $apptoken->getLastUsed()) : '-',
-        '<a href="' . $this->wire('page')->url . 'apptoken/delete/' . $apptoken->getID() . '"><i class="fa fa-trash"></i></a>'
-      ];
+   if ($apptokens instanceof WireArray && $apptokens->count > 0) {
+      foreach ($apptokens as $apptoken) {
+         $row = [
+            $apptoken->getUserLink(),
+            '<a href="' . $this->wire('page')->url . 'apptoken/edit/' . $apptoken->getID() . '">' . $apptoken->getTokenId() . '</a>',
+            $apptoken->getLastUsed() !== null ? wire('datetime')->date('', $apptoken->getLastUsed()) : '-',
+            '<a href="' . $this->wire('page')->url . 'apptoken/delete/' . $apptoken->getID() . '"><i class="fa fa-trash"></i></a>'
+         ];
 
-      $apptokensTable->row($row);
-    }
+         $apptokensTable->row($row);
+      }
 
-    $apptokensTableOutput = $apptokensTable->render();
-  }
+      $apptokensTableOutput = $apptokensTable->render();
+   }
 
-  if (empty($apptokensTableOutput)) {
-    $apptokensTableOutput = '<p><i>' . $this->_('There are no apptokens set for this application.') . '</i></p>';
-  }
+   if (empty($apptokensTableOutput)) {
+      $apptokensTableOutput = '<p><i>' . $this->_('There are no apptokens set for this application.') . '</i></p>';
+   }
 
-  $button = $this->modules->get('InputfieldButton');
-  $button->value = $this->_('Add new Apptoken');
-  $button->icon = 'plus';
-  $button->setSmall(true);
-  $button->attr('href', $this->wire('page')->url . 'apptoken/new/' . $application->getID());
-  $apptokensTableOutput .= $button->render();
+   $button = $this->modules->get('InputfieldButton');
+   $button->value = $this->_('Add new Apptoken');
+   $button->icon = 'plus';
+   $button->setSmall(true);
+   $button->attr('href', $this->wire('page')->url . 'apptoken/new/' . $application->getID());
+   $apptokensTableOutput .= $button->render();
 
-  $field = $this->modules->get('InputfieldMarkup');
-  $field->attr('id+name', 'form_apptokens');
-  $field->label = $this->_('Apptokens');
-  $field->value = $apptokensTableOutput;
-  $field->columnWidth = 100;
-  $form->insertBefore($field, $submitButton);
+   $field = $this->modules->get('InputfieldMarkup');
+   $field->attr('id+name', 'form_apptokens');
+   $field->label = $this->_('Apptokens');
+   $field->value = $apptokensTableOutput;
+   $field->columnWidth = 100;
+   $form->insertBefore($field, $submitButton);
 }
 
 // Output errors:
 if (isset($messages['errors']) && is_array($messages['errors'])) {
 ?>
-<div class="NoticeError" style="padding: 5px 10px;">
-  <strong>
-    <?= $this->_('The form has errors: '); ?>
-  </strong><br />
-  <?php
-  $firstFlag = true;
-  foreach ($messages['errors'] as $error) {
-    if ($firstFlag) {
-      echo $error;
-      $firstFlag = false;
-      continue;
-    }
-    echo '<br/>' . $error;
-  } ?>
-</div>
+   <div class="NoticeError" style="padding: 5px 10px;">
+      <strong><?= $this->_('The form has errors: '); ?></strong><br />
+      <?php
+      $firstFlag = true;
+      foreach ($messages['errors'] as $error) {
+         if ($firstFlag) {
+            echo $error;
+            $firstFlag = false;
+            continue;
+         }
+         echo '<br/>' . $error;
+      } ?>
+   </div>
 <?php
 }
 ?>
 
 <?= $form->render(); ?>
 
-  <p style='padding-top: 20px;'>
-    <a href='<?= $this->wire('page')->url . 'applications/'; ?>'>
+<p style='padding-top: 20px;'>
+   <a href='<?= $this->wire('page')->url . 'applications/'; ?>'>
       <i class="fa fa-arrow-left"></i>&nbsp;<?= $this->_('Go Back'); ?>
-    </a>
-  </p>
+   </a>
+</p>
