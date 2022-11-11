@@ -359,69 +359,70 @@ class Auth extends WireData {
 	/*------------------------------------*\
 	Login types
 	\*------------------------------------*/
-	public function getLogintype($data) {
-		$headers = AppApiHelper::getRequestHeaders();
+   public function getLogintype($data) {
+      $headers = AppApiHelper::getRequestHeaders();
 
-		if (
-			isset($data->username) &&
-			!empty($this->wire('sanitizer')->pageName($data->username)) &&
-			isset($data->password) &&
-			!empty('' . $data->password)
-		) {
-			// Authentication via POST-Param:
-			return [
-				'method' => 'username-password',
-				'params' => [
-					'username' => $data->username,
-					'password' => $data->password
-				],
-			];
-		}
+      if (
+         isset($data->username) &&
+         !empty($this->wire('sanitizer')->pageName($data->username)) &&
+         isset($data->password) &&
+         !empty('' . $data->password)
+      ) {
+         // Authentication via POST-Param:
+         return [
+            'method' => 'username-password',
+            'params' => [
+               'username' => $data->username,
+               'password' => $data->password
+            ],
+         ];
+      }
 
-		if (
-			isset($data->email) &&
-			!empty($this->wire('sanitizer')->email($data->email)) &&
-			isset($data->password) &&
-			!empty('' . $data->password)) {
-			// Authentication via POST-Param with email:
-			return [
-				'method' => 'email-password',
-				'params' => [
-					'email' => $data->email,
-					'password' => $data->password
-				],
-			];
-		}
+      if (
+         isset($data->email) &&
+         !empty($this->wire('sanitizer')->email($data->email)) &&
+         isset($data->password) &&
+         !empty('' . $data->password)
+      ) {
+         // Authentication via POST-Param with email:
+         return [
+            'method' => 'email-password',
+            'params' => [
+               'email' => $data->email,
+               'password' => $data->password
+            ],
+         ];
+      }
 
-		// Extract params from headers
-		$headersParams = null;
-		if (
-			!empty($headers['PHP_AUTH_USER']) &&
-			!empty($headers['PHP_AUTH_PW'])
-		) {
-			// Authentication via Authentication-Header:
-			$headersParams = (object)[
-				'username' => $headers['PHP_AUTH_USER'],
-				'password' => $headers['PHP_AUTH_PW']
-			];
-		}
+      // Extract params from headers
+      $headersParams = null;
+      if (
+         !empty($headers['PHP_AUTH_USER']) &&
+         !empty($headers['PHP_AUTH_PW'])
+      ) {
+         // Authentication via Authentication-Header:
+         $headersParams = (object)[
+            'username' => $headers['PHP_AUTH_USER'],
+            'password' => $headers['PHP_AUTH_PW']
+         ];
+      }
 
-		if (
-			!empty($headers['AUTHORIZATION']) &&
-			substr($headers['AUTHORIZATION'], 0, 6) === 'Basic '
-		) {
-			// Try manually extracting basic auth:
-			$authString = base64_decode(substr($headers['AUTHORIZATION'], 6)) ;
-			if ($authString) {
-				$authParts = explode(':', $authString, 2);
-				if (2 === count($authParts)) {
-					$headersParams = (object)[
-						'username' => $authParts[0],
-						'password' => $authParts[1]
-					];
-				}
-			}
-		}
+      if (
+         !empty($headers['AUTHORIZATION']) &&
+         substr($headers['AUTHORIZATION'], 0, 6) === 'Basic '
+      ) {
+         // Try manually extracting basic auth:
+         $authString = base64_decode(substr($headers['AUTHORIZATION'], 6));
+         if ($authString) {
+            $authParts = explode(':', $authString, 2);
+            if (2 === count($authParts)) {
+               $headersParams = (object)[
+                  'username' => $authParts[0],
+                  'password' => $authParts[1]
+               ];
+            }
+         }
+      }
 
 		if (
 			isset($headersParams->password) &&
@@ -443,198 +444,243 @@ class Auth extends WireData {
 			];
 		}
 
-		if (
-			isset($headersParams->username) &&
-			!empty($this->wire('sanitizer')->email($headersParams->username)) &&
-			isset($headersParams->password) &&
-			!empty('' . $headersParams->password)
-		) {
-			return [
-				'method' => 'any-password',
-				'params' => [
-					'username' => $headersParams->username,
-					'password' => $headersParams->password
-				],
-			];
-		}
+      if (
+         isset($headersParams->username) &&
+         !empty($this->wire('sanitizer')->email($headersParams->username)) &&
+         isset($headersParams->password) &&
+         !empty('' . $headersParams->password)
+      ) {
+         return [
+            'method' => 'any-password',
+            'params' => [
+               'username' => $headersParams->username,
+               'password' => $headersParams->password
+            ],
+         ];
+      }
 
-		header('WWW-Authenticate: Basic realm="Access denied"');
-		throw new AuthException('Login not successful', 401);
-	}
+      header('WWW-Authenticate: Basic realm="Access denied"');
+      throw new AuthException('Login not successful', 401);
+   }
 
-	/**
-	 * Checks for Login-Tokens and authenticates the user in ProcessWire
-	 */
-	public function ___handleAuthentication() {
-		if ($this->application->getAuthtype() === Application::authtypeSingleJWT) {
-			return $this->handleToken(true);
-		} elseif ($this->application->getAuthtype() === Application::authtypeDoubleJWT) {
-			return $this->handleToken();
-		}
-	}
+   /**
+    * Checks for Login-Tokens and authenticates the user in ProcessWire
+    */
+   public function ___handleAuthentication() {
+      if ($this->application->getAuthtype() === Application::authtypeSingleJWT) {
+         return $this->handleToken(true);
+      } elseif ($this->application->getAuthtype() === Application::authtypeDoubleJWT) {
+         return $this->handleToken();
+      } elseif ($this->application->getAuthtype() === Application::authtypeDoubleJWTsecure) {
+         return $this->handleToken();
+      }
+   }
 
-	protected function ___handleToken($singleJwt = false) {
-		try {
-			$tokenString = $this->getBearerToken();
+   protected function ___handleToken($singleJwt = false) {
+      try {
 
-			if ($tokenString === null || !is_string($tokenString) || empty($tokenString)) {
-				$this->clearSession();
-				return false;
-			}
+         $tokenString = $this->getBearerToken();
+         // if ($this->application->getAuthtype() === Application::authtypeDoubleJWT) {
+         //   $tokenString = $this->getBearerToken();
+         // } elseif ($this->application->getAuthtype() === Application::authtypeDoubleJWTsecure) {
+         //   // Access token is retreived normally in a secure JWT mode
+         //   $tokenString = $this->getBearerToken();
+         // }
 
-			// throws exception if token is invalid:
-			try {
-				$secret = $this->application->getTokenSecret();
-				if (!$singleJwt) {
-					$secret = $this->application->getAccesstokenSecret();
-				}
-				$token = JWT::decode($tokenString, $secret, ['HS256']);
-			} catch (\Firebase\JWT\ExpiredException $e) {
-				throw new AccesstokenExpiredException();
-			} catch (\Firebase\JWT\BeforeValidException $e) {
-				throw new AccesstokenNotBeforeException();
-			} catch (\Throwable $e) {
-				throw new AccesstokenInvalidException();
-			}
+         if ($tokenString === null || !is_string($tokenString) || empty($tokenString)) {
+            $this->clearSession();
+            return false;
+         }
 
-			if (!is_object($token)) {
-				throw new AccesstokenInvalidException();
-			}
+         // throws exception if token is invalid:
+         try {
+            $secret = $this->application->getTokenSecret();
+            if (!$singleJwt) {
+               $secret = $this->application->getAccesstokenSecret();
+            }
+            $token = JWT::decode($tokenString, $secret, ['HS256']);
+         } catch (\Firebase\JWT\ExpiredException $e) {
+            throw new AccesstokenExpiredException();
+         } catch (\Firebase\JWT\BeforeValidException $e) {
+            throw new AccesstokenNotBeforeException();
+         } catch (\Throwable $e) {
+            throw new AccesstokenInvalidException();
+         }
 
-			$userid = $this->wire('sanitizer')->int($token->sub);
-			if (empty($userid) || $userid < 1) {
-				throw new AccesstokenInvalidException();
-			}
+         if (!is_object($token)) {
+            throw new AccesstokenInvalidException();
+         }
 
-			$user = $this->wire('users')->get('id=' . $userid);
-			if (!($user instanceof User) || !$user->id) {
-				throw new AccesstokenInvalidException();
-			}
+         $userid = $this->wire('sanitizer')->int($token->sub);
+         if (empty($userid) || $userid < 1) {
+            throw new AccesstokenInvalidException();
+         }
 
-			if (!$singleJwt) {
-				// Get Refreshtoken that was used to generate this accesstoken:
-				$refreshtokenFromDB = $this->application->getApptoken($token->rtkn);
-				if (!$refreshtokenFromDB instanceof Apptoken || !$refreshtokenFromDB->isValid()) {
-					throw new AccesstokenInvalidException();
-				}
+         $user = $this->wire('users')->get('id=' . $userid);
+         if (!($user instanceof User) || !$user->id) {
+            throw new AccesstokenInvalidException();
+         }
 
-				if ($user->isGuest() || $refreshtokenFromDB->getUser()->id !== $user->id) {
-					throw new AccesstokenInvalidException();
-				}
+         if (!$singleJwt) {
+            // Get Refreshtoken that was used to generate this accesstoken:
+            $refreshtokenFromDB = $this->application->getApptoken($token->rtkn);
+            if (!$refreshtokenFromDB instanceof Apptoken || !$refreshtokenFromDB->isValid()) {
+               throw new AccesstokenInvalidException();
+            }
 
-				if (!$refreshtokenFromDB->isAccessable()) {
-					throw new RefreshtokenExpiredException();
-				}
+            if ($user->isGuest() || $refreshtokenFromDB->getUser()->id !== $user->id) {
+               throw new AccesstokenInvalidException();
+            }
 
-				if (!$refreshtokenFromDB->matchesWithJWT($token)) {
-					throw new AccesstokenInvalidException();
-				}
+            if (!$refreshtokenFromDB->isAccessable()) {
+               throw new RefreshtokenExpiredException();
+            }
 
-				$refreshtokenFromDB->setLastUsed(time());
-				if (!$refreshtokenFromDB->save()) {
-					throw new InternalServererrorException('Token could not be saved', 500);
-				}
+            if (!$refreshtokenFromDB->matchesWithJWT($token)) {
+               throw new AccesstokenInvalidException();
+            }
 
-				$this->tokenId = $refreshtokenFromDB->getID();
-			}
+            $refreshtokenFromDB->setLastUsed(time());
+            if (!$refreshtokenFromDB->save()) {
+               throw new InternalServererrorException('Token could not be saved', 500);
+            }
 
-			$sessionname = session_name();
-			if (isset($token->sid)) {
-				$sid = $token->sid;
-				if (is_string($sid) && strlen($sid) > 0) {
-					$_COOKIE[$sessionname] = $sid;
-				}
-			}
+            $this->tokenId = $refreshtokenFromDB->getID();
+         }
 
-			if (isset($token->sid_challenge)) {
-				$sidChallenge = $token->sid_challenge;
-				if (is_string($sidChallenge) && strlen($sid) > 0) {
-					$_COOKIE[$sessionname . '_challenge'] = $sidChallenge;
-				}
-			}
-			$this->wire('users')->setCurrentUser($user);
-		} catch (\Throwable $e) {
-			$this->clearSession();
-			throw $e;
-		}
-	}
+         if ($this->application->getAuthtype() !== Application::authtypeDoubleJWTsecure) {
+            $sessionname = session_name();
+            if (isset($token->sid)) {
+               $sid = $token->sid;
+               if (is_string($sid) && strlen($sid) > 0) {
+                  $_COOKIE[$sessionname] = $sid;
+               }
+            }
 
-	public function ___clearSession() {
-		$this->wire('users')->setCurrentUser($this->wire('users')->get('guest'));
-	}
+            if (isset($token->sid_challenge)) {
+               $sidChallenge = $token->sid_challenge;
+               if (is_string($sidChallenge) && strlen($sid) > 0) {
+                  $_COOKIE[$sessionname . '_challenge'] = $sidChallenge;
+               }
+            }
+         }
 
-	/**
-	 * Only used for logging the currently used token
-	 *
-	 * @return void
-	 */
-	public function getTokenLog() {
-		if ($this->tokenId === false) {
-			return false;
-		}
-		return 'Token-ID: ' . $this->tokenId;
-	}
+         $this->wire('users')->setCurrentUser($user);
+      } catch (\Throwable $e) {
+         $this->clearSession();
+         throw $e;
+      }
+   }
 
-	protected function ___getBearerToken() {
-		$authorizationHeader = $this->getAuthorizationHeader();
+   public function ___clearSession() {
+      $this->wire('users')->setCurrentUser($this->wire('users')->get('guest'));
+   }
 
-		if ($authorizationHeader === null || !is_string($authorizationHeader) || strlen($authorizationHeader) < 7) {
-			if ($_GET && isset($_GET['authorization'])) {
-				$authorizationHeader = $_GET['authorization'];
-				if ($authorizationHeader === null || !is_string($authorizationHeader) || strlen($authorizationHeader) < 7) {
-					return null;
-				}
-			} else {
-				return null;
-			}
-		}
-		if (substr($authorizationHeader, 0, 7) !== 'Bearer ') {
-			return null;
-		}
-		return trim(substr($authorizationHeader, 7));
-	}
+   /**
+    * Only used for logging the currently used token
+    *
+    * @return void
+    */
+   public function getTokenLog() {
+      if ($this->tokenId === false) {
+         return false;
+      }
+      return 'Token-ID: ' . $this->tokenId;
+   }
 
-	protected function ___getAuthorizationHeader() {
-		$headers = AppApiHelper::getRequestHeaders();
-		if (!empty($headers['AUTHORIZATION'])) {
-			return $headers['AUTHORIZATION'];
-		} elseif (!empty($headers['HTTP_AUTHORIZATION'])) {
-			return $headers['HTTP_AUTHORIZATION'];
-		} elseif (!empty($headers['REDIRECT_HTTP_AUTHORIZATION'])) {
-			return $headers['REDIRECT_HTTP_AUTHORIZATION'];
-		}
+   protected function ___getBearerToken() {
+      $authorizationHeader = $this->getAuthorizationHeader();
 
-		return null;
-	}
+      if ($authorizationHeader === null || !is_string($authorizationHeader) || strlen($authorizationHeader) < 7) {
+         if ($_GET && isset($_GET['authorization'])) {
+            $authorizationHeader = $_GET['authorization'];
+            if ($authorizationHeader === null || !is_string($authorizationHeader) || strlen($authorizationHeader) < 7) {
+               return null;
+            }
+         } else {
+            return null;
+         }
+      }
+      if (substr($authorizationHeader, 0, 7) !== 'Bearer ') {
+         return null;
+      }
 
-	// Make Auth Singleton:
-	protected static $mainInstance;
+      // Need this special validation to run Postman automated tests
+      if (substr($authorizationHeader, 0, 9) == 'Bearer {{') {
+         return null;
+      }
+      return trim(substr($authorizationHeader, 7));
+   }
 
-	public static function getInstance() {
-		if (self::$mainInstance === null) {
-			self::$mainInstance = new Auth();
-		}
-		return self::$mainInstance;
-	}
+   protected function ___getAuthorizationHeader() {
+      $headers = AppApiHelper::getRequestHeaders();
+      if (!empty($headers['AUTHORIZATION'])) {
+         return $headers['AUTHORIZATION'];
+      } elseif (!empty($headers['HTTP_AUTHORIZATION'])) {
+         return $headers['HTTP_AUTHORIZATION'];
+      } elseif (!empty($headers['REDIRECT_HTTP_AUTHORIZATION'])) {
+         return $headers['REDIRECT_HTTP_AUTHORIZATION'];
+      }
 
-	// Static functions for Use in Routes:
-	public static function login($data) {
-		return self::getInstance()->doLogin($data);
-	}
+      return null;
+   }
 
-	public static function logout() {
-		return self::getInstance()->doLogout();
-	}
+   protected function ___getBearerTokenSecure() {
+      $authorizationCookie = $this->input->cookie->get('refresh_token');
 
-	public static function access() {
-		return self::getInstance()->getAccessToken();
-	}
+      if ($authorizationCookie === null || !is_string($authorizationCookie) || strlen($authorizationCookie) < 7) {
+         return null;
+      }
+      if (substr($authorizationCookie, 0, 7) !== 'Bearer ') {
+         return null;
+      }
 
-	public static function currentUser() {
-		return [
-			'id' => wire('user')->id,
-			'name' => wire('user')->name,
-			'loggedIn' => wire('user')->isLoggedIn()
-		];
-	}
+      // Need this special validation to run Postman automated tests
+      if (substr($authorizationCookie, 0, 9) == 'Bearer {{') {
+         return null;
+      }
+      return trim(substr($authorizationCookie, 7));
+   }
+
+   // Make Auth Singleton:
+   protected static $mainInstance;
+
+   public static function getInstance() {
+      if (self::$mainInstance === null) {
+         self::$mainInstance = new Auth();
+      }
+      return self::$mainInstance;
+   }
+
+   // Static functions for Use in Routes:
+   public static function login($data) {
+      return self::getInstance()->doLogin($data);
+   }
+
+   public static function logout() {
+      return self::getInstance()->doLogout();
+   }
+
+   public static function access() {
+      return self::getInstance()->getAccessToken();
+   }
+
+   public static function currentUser() {
+      return [
+         'id' => wire('user')->id,
+         'name' => wire('user')->name,
+         'loggedIn' => wire('user')->isLoggedIn(),
+      ];
+   }
 }
+
+
+
+
+
+
+
+
+
+
+?>
