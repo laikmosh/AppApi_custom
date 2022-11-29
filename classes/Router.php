@@ -80,8 +80,20 @@ class Router extends WireData {
 
 			$routeInfo = $dispatcher->dispatch($httpMethod, SELF::getCurrentUrl());
 
-			// Routeinfo and Auth extracted. Router::handle will return the info that should be output
-			$return = Router::handle($routeInfo);
+         try {
+            if ($httpMethod != 'GET') {
+               database()->beginTransaction();
+            }
+            $return = Router::handle($routeInfo);
+            if (database()->inTransaction()) {
+               database()->commit();
+            }
+         } catch (\Throwable $e) {
+            if (database()->inTransaction()) {
+               database()->rollBack();
+            }
+            self::handleException($e);
+         }
 
 			$responseCode = 200;
 			if (is_array($return) && isset($return['responseCode']) && is_numeric($return['responseCode'])) {

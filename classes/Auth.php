@@ -218,16 +218,31 @@ class Auth extends WireData {
          throw new InternalServererrorException('Token could not be saved', 500);
       }
 
+      function fixDomainName($url='') {
+         $strToLower = strtolower(trim($url));
+         $httpPregReplace = preg_replace('/^http:\/\//i', '', $strToLower);
+         $httpsPregReplace = preg_replace('/^https:\/\//i', '', $httpPregReplace);
+         $wwwPregReplace = preg_replace('/^www\./i', '', $httpsPregReplace);
+         $explodeToArray = explode('/', $wwwPregReplace);
+         $finalDomainName = trim($explodeToArray[0]);
+         return $finalDomainName;
+      }
+
       if ($secure) {
-         $this->input->cookie->set('refresh_token', 'Bearer ' . $jwt, [
+         $domain = fixDomainName($_SERVER['HTTP_URL']);
+
+         $this->input->cookie->set('refreshtoken', 'Bearer ' . $jwt, $cookie = [
             'age' => $this->application->getExpiresIn(),
+            'domain' => $domain,
             'httponly' => true, // make visible to PHP but not JS
-            'secure' => isset($_SERVER['HTTPS']) ? true : null,
-            'domain' => true
+            'secure' => $domain != 'localhost',
          ]);
+
          $jwt = $apptoken->getExpirationTime();
          $this->input->cookie->set('refresh_token_expiration', $jwt, [
             'age' => $this->application->getExpiresIn(),
+            'domain' => $domain,
+            'secure' => $domain != 'localhost',
          ]);
       }
 
@@ -280,6 +295,7 @@ class Auth extends WireData {
          'rtkn' => $refreshtokenFromDB->getTokenID()
       ]);
 
+      $this->wire('users')->setCurrentUser($user);
 
       if ($this->application->getAuthtype() === Application::authtypeDoubleJWT) {
          return [
@@ -338,7 +354,7 @@ class Auth extends WireData {
             if ($auth === Application::authtypeDoubleJWT) {
                $tokenString = $this->getBearerToken();
             } elseif ($auth === Application::authtypeDoubleJWTsecure) {
-               $tokenString = $this->getBearerToken();
+               $tokenString = $this->getBearerTokenSecure();
             }
 
             if ($tokenString === null || !is_string($tokenString) || empty($tokenString)) {
@@ -394,17 +410,30 @@ class Auth extends WireData {
          // todo log
       }
 
-      $this->input->cookie->set('refresh_token', '0', [
-         'age' => 0,
-         'httponly' => true, // make visible to PHP but not JS
-         'secure' => isset($_SERVER['HTTPS']) ? true : null,
-         'domain' => true
-      ]);
-      $this->input->cookie->set('refresh_token_expiration', '0', [
-         'age' => 0,
-      ]);
+      function fixDomainName($url='') {
+         $strToLower = strtolower(trim($url));
+         $httpPregReplace = preg_replace('/^http:\/\//i', '', $strToLower);
+         $httpsPregReplace = preg_replace('/^https:\/\//i', '', $httpPregReplace);
+         $wwwPregReplace = preg_replace('/^www\./i', '', $httpsPregReplace);
+         $explodeToArray = explode('/', $wwwPregReplace);
+         $finalDomainName = trim($explodeToArray[0]);
+         return $finalDomainName;
+      }
+
+      $domain = fixDomainName($_SERVER['HTTP_URL']);
+      if (isset($_SERVER['HTTP_COOKIE'])) {
+         $cookies = explode(';', $_SERVER['HTTP_COOKIE']);
+         foreach($cookies as $cookie) {
+            $parts = explode('=', $cookie);
+            $name = trim($parts[0]);
+            setcookie($name, '', time()-1000);
+            setcookie($name, '', time()-1000, '/', $domain);
+         }
+      }
+
 
       $this->wire('session')->logout($this->wire('user'));
+
       return [
          'success' => true
       ];
@@ -673,7 +702,7 @@ class Auth extends WireData {
    }
 
    protected function ___getBearerTokenSecure() {
-      $authorizationCookie = $this->input->cookie->get('refresh_token');
+      $authorizationCookie = $this->input->cookie->get('refreshtoken');
 
       if ($authorizationCookie === null || !is_string($authorizationCookie) || strlen($authorizationCookie) < 7) {
          return null;
